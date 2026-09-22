@@ -73,13 +73,22 @@ Deux limites propres à LocalStack Community ont façonné cette phase (voir
   dégradé, mais pas cassé. Parade possible si le volume grossit vraiment :
   passer sur un plan payant avec clé API, ou un fournisseur avec un quota
   plus large.
-- **Concurrence Lambda plafonnée à 10** (`reserved_concurrent_executions`) :
-  volontaire, pour éviter qu'un pic de logs ne consomme toute la
-  concurrence Lambda du compte AWS (un pool partagé avec toutes les
-  autres fonctions du compte, pas dédié à celle-ci). Si ce plafond est
-  atteint, les invocations en trop ne sont pas perdues immédiatement :
-  CloudWatch les retente automatiquement, tant que la surcharge ne dure
-  pas trop longtemps.
+- **Concurrence Lambda non réservée, limitée au quota du compte (10)** :
+  la réservation explicite (`reserved_concurrent_executions`) s'est
+  révélée impossible sur ce compte AWS — le quota de concurrence total
+  est actuellement de 10, et AWS exige toujours au moins 10 exécutions
+  non réservées disponibles pour le reste du compte. Réserver quoi que
+  ce soit, même 1, ferait donc passer ce quota sous son minimum. La
+  Lambda tourne donc sans réservation explicite, ce qui n'est pas une
+  limite en pratique : elle continue de puiser dans le pool non réservé
+  du compte, qui vaut aujourd'hui la totalité du quota (10 exécutions en
+  parallèle possibles). Si ce plafond est atteint, les invocations en
+  trop ne sont pas perdues immédiatement : CloudWatch Logs invoque la
+  Lambda de façon asynchrone, et AWS retente automatiquement pendant
+  jusqu'à 6 heures avec un backoff exponentiel. Si le volume du honeypot
+  grossit vraiment, une demande d'augmentation de quota (gratuite, via
+  Service Quotas) permettrait de relever ce plafond bien au-delà de 10,
+  et de réserver une part garantie pour cette fonction si besoin.
 
 ## Résultats obtenus et ce qu'ils prouvent
 

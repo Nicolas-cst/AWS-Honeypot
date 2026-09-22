@@ -13,9 +13,13 @@
 #    différent du fichier brut que Firehose déposait sur S3. La Lambda
 #    décompresse (gzip) avant de parser le JSON.
 # 2. Concurrence : un pic soudain de logs peut déclencher plusieurs
-#    invocations Lambda en parallèle. `reserved_concurrent_executions`
-#    plafonne ce nombre pour éviter qu'un pic n'épuise le quota de
-#    concurrence de tout le compte AWS.
+#    invocations Lambda en parallèle. Aucune réservation explicite
+#    (`reserved_concurrent_executions`) n'est configurée ici : le quota
+#    de concurrence du compte AWS utilisé est de 10, et AWS exige
+#    toujours au moins 10 exécutions non réservées disponibles pour le
+#    reste du compte - réserver quoi que ce soit ferait donc passer ce
+#    quota sous son minimum obligatoire. La Lambda puise simplement dans
+#    le pool non réservé du compte (voir CONTRAINTES.md).
 # 3. IAM : permission explicite pour que le service logs.amazonaws.com
 #    puisse invoquer la Lambda (aws_lambda_permission).
 # 4. Le vrai logging Cowrie -> CloudWatch se fait via le driver Docker
@@ -67,16 +71,9 @@ variable "geoip_cache_ttl_seconds" {
   default     = 300
 }
 
-# Plafonne le nombre d'invocations simultanées de la Lambda d'enrichissement.
-# But : éviter qu'un pic soudain de logs (rafale d'attaques) ne consomme tout
-# le quota de concurrence du compte AWS (partagé avec toutes les autres
-# fonctions Lambda du compte). Une valeur modeste suffit largement au volume
-# attendu d'un honeypot personnel.
-variable "lambda_reserved_concurrency" {
-  description = "Nombre maximum d'invocations simultanées de la Lambda d'enrichissement."
-  type        = number
-  default     = 10
-}
+# NB : pas de réservation de concurrence sur la Lambda (voir point 2 de
+# l'en-tête du fichier, et CONTRAINTES.md pour le détail).
+
 
 # ==============================================================================
 # ÉTAPE 1 : RÉSEAU (VPC)
@@ -482,15 +479,14 @@ EOF
 }
 
 resource "aws_lambda_function" "geoip_enrichment" {
-  function_name                 = "cowrie-geoip-enrichment"
-  role                           = aws_iam_role.lambda_geoip_role.arn
-  handler                        = "lambda_function.lambda_handler"
-  runtime                        = "python3.12"
-  timeout                        = 60
-  memory_size                    = 128
-  filename                       = data.archive_file.lambda_zip.output_path
-  source_code_hash               = data.archive_file.lambda_zip.output_base64sha256
-  reserved_concurrent_executions = var.lambda_reserved_concurrency
+  function_name    = "cowrie-geoip-enrichment"
+  role             = aws_iam_role.lambda_geoip_role.arn
+  handler          = "lambda_function.lambda_handler"
+  runtime          = "python3.12"
+  timeout          = 60
+  memory_size      = 128
+  filename         = data.archive_file.lambda_zip.output_path
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
 
   environment {
     variables = {
