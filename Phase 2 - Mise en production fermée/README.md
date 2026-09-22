@@ -3,7 +3,8 @@
 En cours de construction...
  
 Déploiement du honeypot sur une vraie instance AWS, accessible uniquement
-depuis mon IP personnelle. Objectif : valider que tout le pipeline
+depuis mon IP personnelle. 
+Objectif : valider que tout le pipeline
 fonctionne réellement avant d'ouvrir les vannes.
  
 **Au menu, une fois prêt :**
