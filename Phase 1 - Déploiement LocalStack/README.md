@@ -13,82 +13,52 @@ réseau/IAM en conditions réelles.
 
 ##  Point essentiel : les logs ne viennent pas d'une vraie instance
 
-LocalStack Community (la version gratuite) **n'émule pas une vraie VM**.
+Dans cette première phase, il ne m'est pas possible de tester le pipeline de donnée depuis l'instance EC2 directement. Car LocalStack Community (la version gratuite) **n'émule pas une vraie VM**.
 Une ressource `aws_instance` y est simulée uniquement au niveau de l'API
 **aucun système
 d'exploitation ne démarre réellement**. Le honeypot Cowrie ne tourne donc
-pas en local.
+pas en local et je ne peux pas m'y connecter pour générer du traffic. 
 
 Le bloc **"Ingestion de logs simulée"** sur le schéma représente donc
 `log_generator.py` : un script Python qui écrit directement dans
 CloudWatch Logs via `boto3` (`put_log_events`), en imitant le format
-exact des événements que produirait un vrai Cowrie. Le honeypot
-(cadre "Honeypot" dans le VPC) est présent dans le schéma pour la
+exact des événements que produirait un vrai Cowrie. Le honeypot est présent dans le schéma pour la
 cohérence de l'architecture cible, mais **il n'émet rien lui-même dans ce
 test** — la flèche en pointillés vers CloudWatch symbolise ce chemin
-prévu, pas ce qui est réellement exécuté en Phase 1.
+prévu pour les phases suivantes.
 
-### Méthode de génération de logs choisie
+## Utilisation d'un cache à deux niveaux
 
-Plutôt que de tenter de faire tourner un vrai conteneur Cowrie (impossible
-sur LocalStack Community), le choix a été d'injecter des logs
-**structurellement identiques** à ceux de Cowrie directement dans
-CloudWatch. Ça permet de valider tout ce qui se passe **après** la
-capture.
-
-## Le cache GeoIP à deux niveaux
-
-Chaque IP source doit être géolocalisée via un appel à une API externe
+Chaque IP source à l'origine de traffic sur l'honeypot doit être géolocalisée via un appel à une API externe
 (ip-api.com). Sans cache, une IP qui revient plusieurs fois déclencherait
 un appel API redondant à chaque fois. Ne sachant pas dutout à quel traffic m'attendre une fois l'honeypot déployé en production, j'ai fais le choix de mettre en place un cache à 2 niveaux pour éviter au maximum les échanges inutlies.
 
 - **Niveau 1 (mémoire)** : un dictionnaire Python local, valable
-  uniquement pendant l'exécution d'une invocation Lambda. Évite les
-  appels redondants quand plusieurs logs du même lot concernent la même
-  IP.
-- **Niveau 2 (DynamoDB)** : une table avec un TTL court (60 secondes lors
-  des tests, 300 par défaut), qui persiste **entre** deux invocations
+  uniquement pendant l'exécution d'une fonction Lambda. Évite les
+  appels redondants quand plusieurs logs du même lot (traités dans la même Lambda) concernent la même IP.
+- **Niveau 2 (DynamoDB)** : une table avec un TTL court de 300 secondes, qui persiste **entre** deux invocations
   Lambda séparées. La Lambda vérifie elle-même le champ `expires_at`
   avant d'utiliser une entrée, plutôt que de se fier uniquement à la
   suppression automatique DynamoDB (qui n'est pas instantanée).
 
 ## Contraintes rencontrées
 
-Deux limites propres à LocalStack Community ont façonné cette phase (voir
-`CONTRAINTES.md` à la racine du projet pour le détail complet) :
+Deux limites propres à LocalStack Community ont façonné cette phase :
 
 1. **Pas de vraie EC2** (expliqué ci-dessus) → d'où le recours à
    `log_generator.py` plutôt qu'à un vrai Cowrie.
 2. **Pas d'Athena** (réservé à l'offre Pro de
    LocalStack) → l'étape d'analyse SQL n'est donc pas présente dans cette
-   phase, elle ne sera testée qu'au déploiement AWS réel (Phase 2).
+   phase, elle ne sera testée qu'au déploiement en production fermée en Phase 2.
+3. **Firehose non disponible dans le Free-Tier AWS** → Initialement, j'avais intégré Kinesis Data Firehose, qui faisait le pont entre CloudWatch et un bucket de réception des logs au format JSON. Cela m'aurait permis de contrôler explicitement le buffering (taille/durée) et donc d'invoquer la Lambda moins souvent, avec des lots plus gros. Le subscription filter natif de CloudWatch Logs vers Lambda assure bien le fonctionnement (les événements sont toujours regroupés avant invocation), mais ce regroupement est géré en interne par AWS, sans paramètre que je puisse ajuster — ce qui mène à des invocations plus fréquentes qu'avec Firehose. 
 
-## Limites éventuelles à l'échelle et comment les parer
+## Limite éventuelle à l'échelle et comment la parer
 
 - **ip-api.com** (l'API de géolocalisation utilisée) limite gratuitement
   à 45 requêtes par minute. Le cache réduit fortement les appels sur les
   IP déjà vues, mais un afflux de nombreuses IP *différentes* en peu de
-  temps peut quand même dépasser ce seuil. Dans ce cas, l'enrichissement
-  retombe simplement sur `"Unknown"` sans faire planter le pipeline —
-  dégradé, mais pas cassé. Parade possible si le volume grossit vraiment :
-  passer sur un plan payant avec clé API, ou un fournisseur avec un quota
-  plus large.
-- **Concurrence Lambda non réservée, limitée au quota du compte (10)** :
-  la réservation explicite (`reserved_concurrent_executions`) s'est
-  révélée impossible sur ce compte AWS — le quota de concurrence total
-  est actuellement de 10, et AWS exige toujours au moins 10 exécutions
-  non réservées disponibles pour le reste du compte. Réserver quoi que
-  ce soit, même 1, ferait donc passer ce quota sous son minimum. La
-  Lambda tourne donc sans réservation explicite, ce qui n'est pas une
-  limite en pratique : elle continue de puiser dans le pool non réservé
-  du compte, qui vaut aujourd'hui la totalité du quota (10 exécutions en
-  parallèle possibles). Si ce plafond est atteint, les invocations en
-  trop ne sont pas perdues immédiatement : CloudWatch Logs invoque la
-  Lambda de façon asynchrone, et AWS retente automatiquement pendant
-  jusqu'à 6 heures avec un backoff exponentiel. Si le volume du honeypot
-  grossit vraiment, une demande d'augmentation de quota (gratuite, via
-  Service Quotas) permettrait de relever ce plafond bien au-delà de 10,
-  et de réserver une part garantie pour cette fonction si besoin.
+  temps pourrait potentiellemnt dépasser ce seuil, c'est à garder en tête. Ici, le fait que je ne puisse pas prédire l'IP qui sera attribuée à chaque lambda et par conséquent savoir si sa limite d'IP résolvable grâce à l'API est neuve, bloque un peu les solutions. 
+  Je pense que commencer par diminuer mon besoin de résolution d'IP grâce au cache à double niveau est déjà un bon début.
 
 ## Résultats obtenus et ce qu'ils prouvent
 
