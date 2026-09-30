@@ -12,7 +12,7 @@ public prévue dans la phase 3 du projet.
 
 **Capture et enrichissement des logs :**
 
-![Pipeline d'ingestion](Honeypot_Schema.png)
+![Pipeline d'ingestion](media/Honeypot_Schema.png)
 
 Même fonctionnement que dans la partie 1, chaque événement Cowrie déclenche la Lambda d'enrichissement presque
 immédiatement (subscription filter CloudWatch Logs → Lambda direct). Elle décode le texte, résout le pays (cache
@@ -20,7 +20,7 @@ DynamoDB ou API externe), et écrit un fichier JSON dans le bucket enrichi.
 
 **Génération et affichage de la carte :**
 
-![Génération de la carte](ETL_Schema.png)
+![Génération de la carte](media/ETL_Schema.png)
 
 Pour l'instant, le rafraîchissement des données est volontairement simple. \
 Une règle EventBridge déclenche la lambda "map_data_generator" à chaque minute qui écrit les résultats dans le fichier data.json présent dans le bucket "attack_map". Le navigateur utilisateur redemande les données chaque minute et bénéficie donc directement des données fraîchement calculées.\
@@ -48,7 +48,7 @@ Cowrie est exposée sur le port 22 de l'instance EC2, on s'y connecte donc en ss
 
 La vidéo suivante montre que le pipeline ETL fonctionne parfaitement, ma localisation apparaît sur la carte, environ 1 minute après ma connexion sur l'instance. 
 
-[▶️ Voir la vidéo](Intentional_attack.mov)
+[▶️ Voir la vidéo](media/Intentional_attack.mov)
 
 
 
@@ -56,7 +56,7 @@ La vidéo suivante montre que le pipeline ETL fonctionne parfaitement, ma locali
 
 Dans la vidéo suivante, j'ai simulé plusieurs tentatives d'attaques du Honeypot grâce à un script python. Grâce à l'enrichissement géographique des données, on peut les afficher sur la carte interactive.
 
-[▶️ Voir la vidéo](Attacks_simulation.mov)
+[▶️ Voir la vidéo](media/Attacks_simulation.mov)
 
 
 ## Ce que compte réellement la carte
