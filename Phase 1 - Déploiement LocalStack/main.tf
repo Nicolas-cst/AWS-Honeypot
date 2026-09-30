@@ -1,31 +1,7 @@
 # ==============================================================================
 # HONEYPOT AWS - VERSION LOCALSTACK (test local uniquement)
 # ==============================================================================
-# Architecture : Cowrie -> CloudWatch Logs -> (subscription filter direct,
-# sans Firehose, ADR-015) -> Lambda (enrichissement GeoIP, cache 2 niveaux,
-# ADR-010) -> S3 enrichi
-#
-# Ne contient pas Athena/Glue : non émulés par LocalStack Community (ADR-001).
-#
-# Points d'attention pris en compte dans cette version :
-# 1. Format de réception Lambda : CloudWatch Logs envoie un payload
-#    compressé en gzip + encodé en base64 (event['awslogs']['data']),
-#    différent du fichier brut que Firehose déposait sur S3. La Lambda
-#    décompresse (gzip) avant de parser le JSON.
-# 2. Concurrence : un pic soudain de logs peut déclencher plusieurs
-#    invocations Lambda en parallèle. Aucune réservation explicite
-#    (`reserved_concurrent_executions`) n'est configurée ici : le quota
-#    de concurrence du compte AWS utilisé est de 10, et AWS exige
-#    toujours au moins 10 exécutions non réservées disponibles pour le
-#    reste du compte - réserver quoi que ce soit ferait donc passer ce
-#    quota sous son minimum obligatoire. La Lambda puise simplement dans
-#    le pool non réservé du compte (voir CONTRAINTES.md).
-# 3. IAM : permission explicite pour que le service logs.amazonaws.com
-#    puisse invoquer la Lambda (aws_lambda_permission).
-# 4. Le vrai logging Cowrie -> CloudWatch se fait via le driver Docker
-#    "awslogs" directement sur le conteneur, pas via l'agent CloudWatch
-#    (qui n'était jamais configuré ni démarré dans les versions
-#    précédentes - un log Cowrie réel ne remontait donc jamais).
+# Architecture : Cowrie -> CloudWatch Logs -> Lambda -> S3 enrichi
 
 terraform {
   required_version = ">= 1.0"
@@ -70,10 +46,6 @@ variable "geoip_cache_ttl_seconds" {
   type        = number
   default     = 300
 }
-
-# NB : pas de réservation de concurrence sur la Lambda (voir point 2 de
-# l'en-tête du fichier, et CONTRAINTES.md pour le détail).
-
 
 # ==============================================================================
 # ÉTAPE 1 : RÉSEAU (VPC)
@@ -155,10 +127,6 @@ resource "aws_security_group" "honeypot_sg" {
 # ==============================================================================
 # ÉTAPE 2 : INSTANCE EC2 (HONEYPOT)
 # ==============================================================================
-# NB : sur LocalStack Community, cette instance est une simulation d'API,
-# pas une vraie VM (ADR-001). Le user_data ci-dessous n'est donc pas
-# réellement exécuté en local, mais reste la version de référence pour le
-# déploiement AWS réel.
 
 resource "aws_iam_role" "ec2_cloudwatch_role" {
   name = "ec2-cloudwatch-role"

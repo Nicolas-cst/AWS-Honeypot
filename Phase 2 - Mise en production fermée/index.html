@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Honeypot — Carte des attaques</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #121b2ecc;
+    --panel-solid: #121b2e;
+    --landmass: #1b2740;
+    --landmass-stroke: #2c3a5c;
+    --grid: #1a2438;
+    --accent: #e8935b;
+    --accent-soft: #f2c879;
+    --text: #e7ecf5;
+    --text-muted: #8a93a8;
+    --border: #263454;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Space Grotesk", sans-serif;
+    overflow: hidden;
+  }
+
+  #app {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+
+  header {
+    position: absolute;
+    top: env(safe-area-inset-top, 0px);
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 22px 32px;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .wordmark {
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+  }
+
+  .wordmark strong {
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  .counter-block {
+    text-align: right;
+  }
+
+  .counter-value {
+    font-size: 46px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--accent-soft);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .counter-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  footer {
+    position: absolute;
+    bottom: max(18px, env(safe-area-inset-bottom, 0px));
+    left: 32px;
+    right: 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 8px;
+    box-shadow: 0 0 8px var(--accent);
+  }
+
+  #rangeText { margin-right: 14px; }
+
+  svg { display: block; cursor: grab; }
+  svg:active { cursor: grabbing; }
+
+  .sphere {
+    fill: #0e1626;
+    stroke: var(--landmass-stroke);
+    stroke-width: 0.6;
+  }
+
+  .country {
+    fill: var(--landmass);
+    stroke: var(--landmass-stroke);
+    stroke-width: 0.6;
+  }
+
+  .graticule {
+    fill: none;
+    stroke: var(--grid);
+    stroke-width: 0.5;
+  }
+
+  .marker-ring {
+    fill: none;
+    stroke: var(--accent);
+    opacity: 0;
+    animation: pulse 2.6s ease-out infinite;
+  }
+
+  @keyframes pulse {
+    0%   { r: var(--r0); opacity: 0.55; stroke-width: 1.5; }
+    100% { r: var(--r1); opacity: 0; stroke-width: 0.4; }
+  }
+
+  .marker-dot {
+    fill: var(--accent);
+    filter: drop-shadow(0 0 4px var(--accent));
+    cursor: pointer;
+  }
+
+  .marker-dot.is-selected {
+    fill: var(--accent-soft);
+    filter: drop-shadow(0 0 8px var(--accent-soft));
+  }
+
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    padding: 8px 12px;
+    border-radius: 3px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--text);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    z-index: 20;
+    white-space: nowrap;
+  }
+
+  .tooltip .tt-count { color: var(--accent-soft); }
+
+  /* ---- Panneau de statistiques ---- */
+  .stats-panel {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 70px);
+    right: 0;
+    bottom: max(36px, env(safe-area-inset-bottom, 0px));
+    width: 300px;
+    background: var(--panel);
+    backdrop-filter: blur(6px);
+    border-image: linear-gradient(to bottom, transparent, var(--border) 12%, var(--border) 88%, transparent) 1;
+    border-left: 1px solid;
+    border-radius: 10px 0 0 10px;
+    padding: 44px 22px;
+    overflow-y: auto;
+    z-index: 15;
+    transition: transform 0.25s ease;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, black 48px, black calc(100% - 48px), transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, black 48px, black calc(100% - 48px), transparent 100%);
+  }
+
+  .stats-panel.collapsed { transform: translateX(100%); }
+
+  .stats-section { margin-bottom: 26px; }
+  .stats-section:last-child { margin-bottom: 0; }
+
+  .stats-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+
+  .stats-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-bottom: 10px;
+  }
+
+  .stats-row-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+  }
+
+  .stats-row-label {
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 190px;
+  }
+
+  .stats-row-count { color: var(--accent-soft); flex-shrink: 0; }
+
+  .stats-bar-track {
+    height: 3px;
+    background: var(--landmass);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .stats-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+
+  .stats-empty {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .stats-toggle {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 90px);
+    right: 0;
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    border-right: none;
+    color: var(--text-muted);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 4px 0 0 4px;
+    cursor: pointer;
+    z-index: 16;
+    display: none;
+  }
+
+  /* ---- Zoom ---- */
+  .zoom-controls {
+    position: absolute;
+    left: 32px;
+    bottom: max(64px, env(safe-area-inset-bottom, 0px) + 28px);
+    display: flex;
+    flex-direction: column;
+    z-index: 12;
+  }
+
+  .zoom-btn {
+    width: 32px;
+    height: 32px;
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.15s ease, background 0.15s ease;
+  }
+
+  .zoom-btn:hover { color: var(--text); background: #17223a; }
+  .zoom-btn:first-child { border-radius: 6px 6px 0 0; }
+  .zoom-btn:last-child { border-radius: 0 0 6px 6px; border-top: none; }
+
+  /* ---- Fiche detail (clic sur un point) ---- */
+  .detail-card {
+    position: absolute;
+    bottom: max(64px, env(safe-area-inset-bottom, 0px) + 28px);
+    left: 32px;
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 16px 20px;
+    border-radius: 4px;
+    z-index: 17;
+    min-width: 220px;
+    opacity: 0;
+    transform: translateY(6px);
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  .detail-card.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .detail-card-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 16px;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  .detail-card-country {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+    padding-right: 16px;
+  }
+
+  .detail-card-count {
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--accent-soft);
+    line-height: 1;
+  }
+
+  .detail-card-sub {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 6px;
+  }
+
+  .empty-state {
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    right: 0; /* ajuste dynamiquement en JS pour matcher le centrage du globe */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+    padding: 0 24px;
+  }
+
+  .empty-state .big { font-size: 20px; color: var(--text); }
+  .empty-state .small {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 420px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .marker-ring { animation: none; opacity: 0.35; }
+  }
+
+  @media (max-width: 860px) {
+    header { padding: 16px 18px; flex-direction: column; gap: 10px; align-items: flex-start; }
+    .counter-block { text-align: left; }
+    .counter-value { font-size: 34px; }
+    footer { left: 18px; right: 18px; flex-direction: column; align-items: flex-start; gap: 6px; }
+
+    .stats-panel {
+      width: min(320px, 84vw);
+      top: calc(env(safe-area-inset-top, 0px) + 130px);
+    }
+    .stats-panel.collapsed { transform: translateX(100%); }
+    .stats-toggle { display: block; top: calc(env(safe-area-inset-top, 0px) + 130px); }
+
+    .detail-card { left: 18px; right: 18px; min-width: unset; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="wordmark"><strong>Honeypot</strong> — surveillance réseau</div>
+    <div class="counter-block">
+      <div class="counter-value" id="counterValue">—</div>
+      <div class="counter-label">interactions</div>
+    </div>
+  </header>
+
+  <svg id="map"></svg>
+
+  <div class="tooltip" id="tooltip"></div>
+
+  <div class="zoom-controls">
+    <button class="zoom-btn" id="zoomIn" aria-label="Zoomer">+</button>
+    <button class="zoom-btn" id="zoomOut" aria-label="Dézoomer">−</button>
+  </div>
+
+  <button class="stats-toggle" id="statsToggle">Statistiques</button>
+
+  <aside class="stats-panel" id="statsPanel">
+    <div class="stats-section">
+      <div class="stats-title">Pays les plus actifs</div>
+      <div id="topCountries"><div class="stats-empty">En attente de données…</div></div>
+    </div>
+    <div class="stats-section">
+      <div class="stats-title">Identifiants les plus testés</div>
+      <div id="topCredentials"><div class="stats-empty">En attente de données…</div></div>
+    </div>
+    <div class="stats-section">
+      <div class="stats-title">Commandes les plus tapées</div>
+      <div id="topCommands"><div class="stats-empty">En attente de données…</div></div>
+    </div>
+  </aside>
+
+  <div class="detail-card" id="detailCard">
+    <button class="detail-card-close" id="detailClose">×</button>
+    <div class="detail-card-country" id="detailCountry"></div>
+    <div class="detail-card-count" id="detailCount"></div>
+    <div class="detail-card-sub" id="detailSub"></div>
+  </div>
+
+  <footer>
+    <div><span class="status-dot"></span><span id="statusText">Connexion aux données…</span></div>
+    <div>
+      <span id="rangeText"></span>
+      <span id="updatedText"></span>
+    </div>
+  </footer>
+</div>
+
+<script>
+(function () {
+  const svg = d3.select("#map");
+  const tooltip = d3.select("#tooltip");
+  const counterValue = document.getElementById("counterValue");
+  const statusText = document.getElementById("statusText");
+  const updatedText = document.getElementById("updatedText");
+  const rangeText = document.getElementById("rangeText");
+  const statsPanel = document.getElementById("statsPanel");
+  const statsToggle = document.getElementById("statsToggle");
+  const detailCard = document.getElementById("detailCard");
+  const detailClose = document.getElementById("detailClose");
+  const detailCountry = document.getElementById("detailCountry");
+  const detailCount = document.getElementById("detailCount");
+  const detailSub = document.getElementById("detailSub");
+
+  let width, height, projection, path, g, markerLayer;
+  let worldData = null;
+  let latestPoints = [];
+  let latestTotal = 0;
+  let selectedKey = null;
+
+  let rotation = [-10, -18, 0];
+  let dragging = false;
+  let lastInteraction = 0;
+  let baseScale = 1;
+  let zoomK = 1;
+  const sphere = { type: "Sphere" };
+
+  // ---- Effet "flick" : lancer le globe d'un geste rapide, il tourne
+  // vite puis ralentit progressivement jusqu'a retrouver la vitesse de
+  // rotation par defaut, sans jamais s'arreter net.
+  let spinVelocity = 0;     // vitesse actuelle pendant la decroissance (deg/s)
+  let isFlicking = false;   // vrai tant que la decroissance n'a pas rejoint la vitesse par defaut
+  let lastDragTime = 0;
+  let smoothedVelocity = 0; // moyenne lissee de la vitesse pendant le glisser
+  const FLICK_THRESHOLD = 60; // deg/s minimum pour compter comme un "lancer" plutot qu'un simple glisser
+  const FLICK_DECAY_RATE = 1.1; // plus haut = ralentit plus vite
+
+  // Panneau replie par defaut sous 860px, ouvert au-dessus
+  function applyPanelDefault() {
+    if (window.innerWidth <= 860) statsPanel.classList.add("collapsed");
+    else statsPanel.classList.remove("collapsed");
+  }
+  applyPanelDefault();
+
+  // Largeur reellement occupee par le panneau en ce moment (0 s'il est
+  // replie) - utilisee pour centrer le globe dans l'espace restant a
+  // gauche, pas sur toute la largeur de l'ecran.
+  function getReservedPanelWidth() {
+    if (statsPanel.classList.contains("collapsed")) return 0;
+    return statsPanel.getBoundingClientRect().width;
+  }
+
+  function refreshProjectionLayout() {
+    setupProjection();
+    updateBase();
+    renderMarkers(latestPoints);
+    const empty = document.querySelector(".empty-state");
+    if (empty) empty.style.right = getReservedPanelWidth() + "px";
+  }
+
+  statsToggle.addEventListener("click", function () {
+    statsPanel.classList.toggle("collapsed");
+    refreshProjectionLayout(); // le panneau change de largeur visible, le globe doit se recentrer
+  });
+
+  function setupProjection() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    svg.attr("width", width).attr("height", height);
+
+    // Centre le globe sur l'espace disponible a gauche du panneau de
+    // statistiques, pas sur la largeur totale de l'ecran.
+    const reservedWidth = getReservedPanelWidth();
+    const availableWidth = Math.max(width - reservedWidth, 240);
+    const centerX = availableWidth / 2;
+
+    baseScale = Math.min(availableWidth, height) / 2.25;
+    projection = d3.geoOrthographic()
+      .scale(baseScale * zoomK)
+      .translate([centerX, height / 2])
+      .clipAngle(90)
+      .rotate(rotation);
+
+    path = d3.geoPath(projection);
+  }
+
+  setupProjection();
+  g = svg.append("g");
+  const graticule = d3.geoGraticule10();
+
+  // Structure DOM creee une seule fois (sphere, graticule, groupe des
+  // pays, groupe des points) - les rotations suivantes ne font que
+  // mettre a jour les attributs "d"/"transform", sans jamais recreer les
+  // noeuds, pour rester fluide meme en rotation continue.
+  function initBase() {
+    g.append("path").attr("class", "sphere").datum(sphere);
+    g.append("path").attr("class", "graticule").datum(graticule);
+    g.append("g").attr("class", "countries-layer");
+    markerLayer = g.append("g").attr("class", "markers");
+    updateBase();
+  }
+
+  function updateBase() {
+    g.select(".sphere").attr("d", path);
+    g.select(".graticule").attr("d", path);
+    if (worldData) {
+      g.select(".countries-layer").selectAll(".country")
+        .data(worldData.features)
+        .join("path")
+        .attr("class", "country")
+        .attr("d", path);
+    }
+  }
+
+  initBase();
+
+  function radiusScale(maxCount) {
+    return d3.scaleSqrt().domain([1, Math.max(maxCount, 1)]).range([4, 26]);
+  }
+
+  function pointKey(d) { return d.country + "|" + d.lat + "|" + d.lon; }
+
+  // Un point au dos du globe ne doit pas s'afficher : la projection
+  // orthographique ne le fait pas disparaitre toute seule pour des
+  // marqueurs places manuellement (contrairement aux contours de pays,
+  // geres automatiquement par le clipAngle du path).
+  function isFrontFacing(lon, lat) {
+    const r = projection.rotate();
+    const center = [-r[0], -r[1]];
+    return d3.geoDistance([lon, lat], center) < (Math.PI / 2 - 0.02);
+  }
+
+  function showDetail(d, rank) {
+    selectedKey = pointKey(d);
+    const pct = latestTotal ? ((d.count / latestTotal) * 100).toFixed(1) : "0";
+    detailCountry.textContent = d.country;
+    detailCount.textContent = d.count.toLocaleString("fr-FR");
+    detailSub.textContent = `${rank}ᵉ pays le plus actif — ${pct}% du total`;
+    detailCard.classList.add("visible");
+    markerLayer.selectAll(".marker-dot")
+      .classed("is-selected", dd => pointKey(dd) === selectedKey);
+  }
+
+  function hideDetail() {
+    selectedKey = null;
+    detailCard.classList.remove("visible");
+    if (markerLayer) markerLayer.selectAll(".marker-dot").classed("is-selected", false);
+    lastInteraction = Date.now(); // redemarre le decompte avant reprise de la rotation
+  }
+
+  detailClose.addEventListener("click", hideDetail);
+  svg.on("click", hideDetail);
+
+  function renderMarkers(points) {
+    if (!markerLayer) return;
+    const maxCount = d3.max(points, d => d.count) || 1;
+    const rScale = radiusScale(maxCount);
+    const sorted = [...points].sort((a, b) => b.count - a.count);
+
+    const groups = markerLayer.selectAll("g.marker")
+      .data(points, pointKey);
+
+    groups.exit().remove();
+
+    const entered = groups.enter().append("g").attr("class", "marker");
+    entered.append("circle").attr("class", "marker-ring");
+    entered.append("circle").attr("class", "marker-dot");
+
+    const merged = entered.merge(groups)
+      .style("display", d => isFrontFacing(d.lon, d.lat) ? null : "none")
+      .attr("transform", d => {
+        const proj = projection([d.lon, d.lat]);
+        return proj ? `translate(${proj[0]},${proj[1]})` : "translate(-9999,-9999)";
+      });
+
+    merged.select(".marker-dot")
+      .attr("r", d => rScale(d.count) * 0.28)
+      .classed("is-selected", d => pointKey(d) === selectedKey)
+      .on("mouseenter", function (event, d) {
+        tooltip.style("opacity", 1)
+          .html(`${d.country} — <span class="tt-count">${d.count}</span> tentative${d.count > 1 ? "s" : ""}`);
+      })
+      .on("mousemove", function (event) {
+        tooltip.style("left", (event.pageX + 14) + "px").style("top", (event.pageY - 10) + "px");
+      })
+      .on("mouseleave", function () { tooltip.style("opacity", 0); })
+      .on("click", function (event, d) {
+        event.stopPropagation();
+        const rank = sorted.findIndex(s => pointKey(s) === pointKey(d)) + 1;
+        showDetail(d, rank);
+      });
+
+    merged.select(".marker-ring")
+      .style("--r0", d => (rScale(d.count) * 0.28) + "px")
+      .style("--r1", d => (rScale(d.count) * 1.9) + "px")
+      .attr("r", d => rScale(d.count) * 0.28);
+  }
+
+  // ---- Rotation : glisser a la souris/au doigt + rotation lente au repos ----
+  function applyRotation(newRotation) {
+    rotation = newRotation;
+    projection.rotate(rotation);
+    updateBase();
+    renderMarkers(latestPoints);
+  }
+
+  const dragBehavior = d3.drag()
+    .clickDistance(4) // laisse un vrai clic sur un point fonctionner normalement
+    .filter(function (event) {
+      // Un seul doigt (ou souris) fait tourner le globe ; deux doigts
+      // sont reserves au pincement de zoom (voir zoomBehavior ci-dessous).
+      return !event.touches || event.touches.length === 1;
+    })
+    .on("start", function () {
+      dragging = true;
+      isFlicking = false; // reprendre le globe en main annule toute decroissance en cours
+      smoothedVelocity = 0;
+      lastDragTime = performance.now();
+      tooltip.style("opacity", 0);
+    })
+    .on("drag", function (event) {
+      // Meme logique que pour la rotation automatique : compenser par
+      // zoomK pour qu'un glisser d'une distance donnee tourne toujours
+      // le globe d'un meme ressenti visuel, zoome ou non.
+      const sensitivity = 0.28 / zoomK;
+      const nextLambda = rotation[0] + event.dx * sensitivity;
+      const nextPhi = Math.max(-90, Math.min(90, rotation[1] - event.dy * sensitivity));
+
+      // Vitesse instantanee de ce mouvement, lissee sur les derniers
+      // ticks pour capturer un "lancer" volontaire plutot que le bruit
+      // d'un seul evenement de glisser.
+      const now = performance.now();
+      const dt = Math.max((now - lastDragTime) / 1000, 0.001);
+      const instVelocity = (nextLambda - rotation[0]) / dt;
+      smoothedVelocity = smoothedVelocity * 0.6 + instVelocity * 0.4;
+      lastDragTime = now;
+
+      applyRotation([nextLambda, nextPhi, 0]);
+    })
+    .on("end", function () {
+      dragging = false;
+      if (Math.abs(smoothedVelocity) > FLICK_THRESHOLD) {
+        // Vrai "lancer" : le globe continue sur sa lancee, en ralentissant
+        // progressivement (voir le timer plus bas), sans le delai habituel
+        // avant reprise de la rotation automatique.
+        spinVelocity = smoothedVelocity;
+        isFlicking = true;
+      } else {
+        // Simple repositionnement : comportement habituel, pause avant
+        // reprise de la rotation par defaut.
+        lastInteraction = Date.now();
+      }
+    });
+
+  svg.call(dragBehavior);
+
+  // ---- Zoom : molette, pincement a deux doigts, boutons +/- ----
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 4;
+
+  function applyZoom(k) {
+    zoomK = k;
+    projection.scale(baseScale * zoomK);
+    updateBase();
+    renderMarkers(latestPoints);
+  }
+
+  const zoomBehavior = d3.zoom()
+    .scaleExtent([ZOOM_MIN, ZOOM_MAX])
+    .filter(function (event) {
+      // Molette ou pincement a deux doigts uniquement - le glisser a un
+      // seul doigt/bouton reste entierement gere par dragBehavior.
+      return event.type === "wheel" || (event.touches && event.touches.length > 1);
+    })
+    .on("zoom", function (event) {
+      lastInteraction = Date.now();
+      applyZoom(event.transform.k);
+    });
+
+  svg.call(zoomBehavior);
+
+  document.getElementById("zoomIn").addEventListener("click", function () {
+    svg.transition().duration(200).call(zoomBehavior.scaleBy, 1.4);
+  });
+  document.getElementById("zoomOut").addEventListener("click", function () {
+    svg.transition().duration(200).call(zoomBehavior.scaleBy, 1 / 1.4);
+  });
+
+  const AUTOROTATE_DEG_PER_SEC = 4;
+  const RESUME_DELAY_MS = 5000;
+  let lastElapsed = 0;
+
+  d3.timer(function (elapsed) {
+    const dt = elapsed - lastElapsed;
+    lastElapsed = elapsed;
+    if (dragging || selectedKey !== null) return;
+
+    // Vitesse cible au repos, elle aussi compensee par le zoom (meme
+    // raisonnement que l'ancienne rotation automatique fixe).
+    const targetSpeed = AUTOROTATE_DEG_PER_SEC / zoomK;
+
+    if (isFlicking) {
+      const dtSeconds = dt / 1000;
+      // Approche exponentielle vers la vitesse par defaut : rapide au
+      // debut, de plus en plus doux, jamais d'arret net ni de a-coup.
+      spinVelocity += (targetSpeed - spinVelocity) * (1 - Math.exp(-FLICK_DECAY_RATE * dtSeconds));
+      applyRotation([rotation[0] + spinVelocity * dtSeconds, rotation[1], 0]);
+
+      if (Math.abs(spinVelocity - targetSpeed) < 0.5) {
+        isFlicking = false; // vitesse par defaut retrouvee, bascule silencieuse vers la rotation normale
+      }
+      return;
+    }
+
+    if (Date.now() - lastInteraction < RESUME_DELAY_MS) return;
+    // Vitesse angulaire compensee par le zoom : a l'ecran, un meme
+    // deplacement en degres parait plus rapide quand le globe est
+    // agrandi. On divise par zoomK pour garder une vitesse visuelle
+    // stable, que l'on soit zoome ou non.
+    applyRotation([rotation[0] + targetSpeed * (dt / 1000), rotation[1], 0]);
+  });
+
+  function renderStatList(containerId, items, formatLabel, formatCount) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = "";
+    if (!items || !items.length) {
+      container.innerHTML = '<div class="stats-empty">Pas encore de données</div>';
+      return;
+    }
+    const max = items[0].count || 1;
+    items.slice(0, 5).forEach(item => {
+      const pct = Math.max(4, Math.round((item.count / max) * 100));
+      const row = document.createElement("div");
+      row.className = "stats-row";
+      row.innerHTML = `
+        <div class="stats-row-top">
+          <span class="stats-row-label">${formatLabel(item)}</span>
+          <span class="stats-row-count">${formatCount(item)}</span>
+        </div>
+        <div class="stats-bar-track"><div class="stats-bar-fill" style="width:${pct}%"></div></div>
+      `;
+      container.appendChild(row);
+    });
+  }
+
+  function showEmptyState(message) {
+    d3.select("#app").select(".empty-state").remove();
+    d3.select("#app").append("div").attr("class", "empty-state")
+      .style("right", getReservedPanelWidth() + "px") // centre sur le meme espace que le globe, pas tout l'ecran
+      .html(`<div class="big">Rien à afficher pour l'instant</div><div class="small">${message}</div>`);
+  }
+
+  function hideEmptyState() { d3.select("#app").select(".empty-state").remove(); }
+
+  function formatTime(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return ""; }
+  }
+
+  function formatDateTime(iso) {
+    try {
+      const d = new Date(iso);
+      return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" })
+        + " à " + formatTime(iso);
+    } catch (e) { return ""; }
+  }
+
+  function applyPayload(json) {
+    const points = (json.countries || []).filter(d => d.lat && d.lon);
+    latestPoints = points;
+    latestTotal = json.total || 0;
+
+    counterValue.textContent = latestTotal.toLocaleString("fr-FR");
+    statusText.textContent = points.length
+      ? points.length + (points.length > 1 ? " pays représentés" : " pays représenté")
+      : "En attente de données";
+
+    rangeText.textContent = json.earliest_timestamp
+      ? "Données du " + formatDateTime(json.earliest_timestamp) + " à maintenant"
+      : "";
+    updatedText.textContent = json.generated_at ? "Dernière mise à jour : " + formatTime(json.generated_at) : "";
+
+    renderStatList("topCountries", points, c => c.country, c => c.count.toLocaleString("fr-FR"));
+    renderStatList("topCredentials", json.top_credentials,
+      c => `${c.username} / ${c.password || "(vide)"}`, c => c.count.toLocaleString("fr-FR"));
+    renderStatList("topCommands", json.top_commands,
+      c => c.command, c => c.count.toLocaleString("fr-FR"));
+
+    // Pas de hideDetail() ici : ce rendu est aussi appele par le
+    // rafraichissement automatique et le bouton manuel - la selection en
+    // cours ne doit pas sauter a chaque fois.
+
+    if (points.length) {
+      hideEmptyState();
+      renderMarkers(points);
+    } else {
+      showEmptyState("Aucune tentative enregistrée pour le moment. La carte se mettra à jour automatiquement dès qu'une attaque sera captée.");
+    }
+  }
+
+  // Un seul etat affiche : toutes les donnees depuis le debut de la
+  // capture. Regenere par la Lambda planifiee (EventBridge, toutes les
+  // 5 min) et rechargeable manuellement via le bouton "Rafraichir",
+  // simplifie volontairement (voir DECISIONS.md) - l'ancien filtre de
+  // periode donnait des vues incoherentes entre elles selon la fraicheur
+  // de chaque source. L'analyse par periode sera reprise en Phase 4.
+  async function loadData() {
+    try {
+      const res = await fetch("./data.json", { cache: "no-store" });
+      if (!res.ok) throw new Error("data.json indisponible");
+      applyPayload(await res.json());
+    } catch (err) {
+      statusText.textContent = "Données indisponibles";
+      showEmptyState("Impossible de charger data.json. Vérifie que la Lambda de génération a bien tourné au moins une fois.");
+    }
+  }
+
+  d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
+    .then(function (topo) {
+      worldData = topojson.feature(topo, topo.objects.countries);
+      updateBase();
+      loadData();
+    })
+    .catch(function (err) {
+      console.error("Echec du chargement du fond de carte (contours des pays) :", err);
+      updateBase();
+      loadData();
+    });
+
+  window.addEventListener("resize", function () {
+    applyPanelDefault(); // met a jour l'etat replie/ouvert AVANT le calcul de projection
+    refreshProjectionLayout();
+  });
+
+  setInterval(loadData, 60000);
+})();
+</script>
+</body>
+</html>
