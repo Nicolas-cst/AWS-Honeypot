@@ -1,4 +1,4 @@
-# Phase 2 — Production fermée (AWS réel)
+# Phase 2.1 — Production fermée (AWS réel)
 
 ## Objectif
 
