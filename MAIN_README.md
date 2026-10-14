@@ -57,5 +57,5 @@ Exploiter les données collectées après plusieurs jours/semaines de production
 
 ## Présentation succinte de l'architecure du repo
 
-Le repertoire est organisé par phase d'avancement, c'est ce qui me parait le plus logique en vue de l'obejctif du répoertoire, présenté dans l'introduction. 
+Le répertoire est organisé par phase d'avancement, c'est ce qui me parait être le plus logique. 
 Vous trouverez un readme dans chaque phase, présentant clairement son objectif et l'architecture utilisée pour l'atteindre. 
