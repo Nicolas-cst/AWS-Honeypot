@@ -47,7 +47,7 @@ Elle est réalisée par étapes, chacune avec code, tests et validation :
 | 5 | Pipeline de publication : Lambda `publisher`, EventBridge, CloudFront, carte | ✅  |
 | 6 | Monitoring (dashboard, alarmes) + GuardDuty | ✅ |
 | 7 | Kill switch : infrastructure de quarantaine | ✅ |
-| 8 | Kill switch réel + exercice d'incident | 🟡 Code prêt, déploiement en cours |
+| 8 | Kill switch réel + exercice d'incident | ✅ |
 
 ### Phase 3 — Mise en production
 Ouvrir la version 2.2 au trafic public, corriger les bugs éventuels et affiner les paramètres.
