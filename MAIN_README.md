@@ -44,9 +44,9 @@ Elle est réalisée par étapes, chacune avec code, tests et validation :
 | 2 | Durcissement EC2 : IMDSv2, iptables, test de sortie *fail-closed*, accès par SSM | ✅ |
 | 3 | NACL dédié au sous-réseau | ✅ |
 | 4 | Pipeline d'analyse : Lambda `processor`, DynamoDB, S3, Glue/Athena | ✅ |
-| 5 | Pipeline de publication : Lambda `publisher`, EventBridge, CloudFront, carte | 🟡 Code prêt, déploiement en cours |
-| 6 | Monitoring (dashboard, alarmes) + GuardDuty | ⏳ |
-| 7 | Kill switch : infrastructure de quarantaine | ⏳ |
+| 5 | Pipeline de publication : Lambda `publisher`, EventBridge, CloudFront, carte | ✅  |
+| 6 | Monitoring (dashboard, alarmes) + GuardDuty | ✅ |
+| 7 | Kill switch : infrastructure de quarantaine | 🟡 Code prêt, déploiement en cours |
 | 8 | Kill switch réel + exercice d'incident | ⏳ |
 
 ### Phase 3 — Mise en production
