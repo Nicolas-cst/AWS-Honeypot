@@ -29,7 +29,7 @@ Valider le pipeline de traitement des logs (capture, enrichissement GeoIP, stock
 Déployer le honeypot sur une vraie instance AWS, **accessible uniquement depuis mon IP**, pour valider le pipeline de bout en bout : *capture → enrichissement → stockage → analyse → visualisation*.
 Objectif atteint, mais cette version n'est **pas prête pour un trafic public** : carte rafraîchie via Athena (coût et performances qui se dégradent avec le volume) et sécurité à renforcer.
 
-### Phase 2.2 — Version 2 (en cours)
+### Phase 2.2 — Version 2
 Corriger les défauts de la 2.1 **avant** l'ouverture publique, selon deux axes :
 
 1. **Traitement des données** : remplacer le rafraîchissement de la carte via Athena par une **agrégation incrémentale** (Lambda + DynamoDB), à coût constant.
@@ -49,7 +49,7 @@ Elle est réalisée par étapes, chacune avec code, tests et validation :
 | 7 | Kill switch : infrastructure de quarantaine | ✅ |
 | 8 | Kill switch réel + exercice d'incident | ✅ |
 
-### Phase 3 — Mise en production
+### Phase 3 — Mise en production (en cours)
 Ouvrir la version 2.2 au trafic public, corriger les bugs éventuels et affiner les paramètres.
 
 ### Phase 4 — Analyse des résultats
