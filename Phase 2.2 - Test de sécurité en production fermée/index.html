@@ -22,6 +22,8 @@
     --text: #e7ecf5;
     --text-muted: #8a93a8;
     --border: #263454;
+    --heat-low: #6b3b1c;
+    --heat-high: #ff9a3d;
     box-sizing: border-box;
     padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: env(safe-area-inset-bottom, 0px);
@@ -115,6 +117,21 @@
 
   #rangeText { margin-right: 14px; }
 
+  .legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 18px;
+  }
+
+  .legend-bar {
+    display: inline-block;
+    width: 72px;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(to right, var(--heat-low), var(--heat-high));
+  }
+
   svg { display: block; cursor: grab; }
   svg:active { cursor: grabbing; }
 
@@ -130,22 +147,15 @@
     stroke-width: 0.6;
   }
 
+  /* Pays ayant reçu des tentatives : la couleur de fond est posée en JS selon le rang. */
+  .country.has-data { cursor: pointer; stroke: #0b1220; stroke-width: 0.5; }
+  .country.has-data:hover { stroke: var(--accent-soft); stroke-width: 1.3; }
+  .country.is-selected { stroke: var(--text); stroke-width: 1.5; }
+
   .graticule {
     fill: none;
     stroke: var(--grid);
     stroke-width: 0.5;
-  }
-
-  .marker-ring {
-    fill: none;
-    stroke: var(--accent);
-    opacity: 0;
-    animation: pulse 2.6s ease-out infinite;
-  }
-
-  @keyframes pulse {
-    0%   { r: var(--r0); opacity: 0.55; stroke-width: 1.5; }
-    100% { r: var(--r1); opacity: 0; stroke-width: 0.4; }
   }
 
   .marker-dot {
@@ -380,10 +390,6 @@
     max-width: 420px;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    .marker-ring { animation: none; opacity: 0.35; }
-  }
-
   @media (max-width: 860px) {
     header { padding: 16px 18px; flex-direction: column; gap: 10px; align-items: flex-start; }
     .counter-block { text-align: left; }
@@ -447,6 +453,7 @@
   <footer>
     <div><span class="status-dot"></span><span id="statusText">Connexion aux données…</span></div>
     <div>
+      <span class="legend"><span>moins actif</span><span class="legend-bar"></span><span>plus actif</span></span>
       <span id="rangeText"></span>
       <span id="updatedText"></span>
     </div>
@@ -527,6 +534,47 @@ window.HP = (function () {
     ZM: [28, -14], ZW: [29.85, -19]
   };
 
+  // Le fond de carte (world-atlas) identifie les pays par leur code ISO numerique ;
+  // data.json utilise les codes a deux lettres. Cette table fait le lien.
+  const ISO_NUM = {
+    "004": "AF", "008": "AL", "010": "AQ", "012": "DZ", "016": "AS", "020": "AD", "024": "AO",
+    "028": "AG", "031": "AZ", "032": "AR", "036": "AU", "040": "AT", "044": "BS", "048": "BH",
+    "050": "BD", "051": "AM", "052": "BB", "056": "BE", "060": "BM", "064": "BT", "068": "BO",
+    "070": "BA", "072": "BW", "074": "BV", "076": "BR", "084": "BZ", "086": "IO", "090": "SB",
+    "092": "VG", "096": "BN", "100": "BG", "104": "MM", "108": "BI", "112": "BY", "116": "KH",
+    "120": "CM", "124": "CA", "132": "CV", "136": "KY", "140": "CF", "144": "LK", "148": "TD",
+    "152": "CL", "156": "CN", "158": "TW", "162": "CX", "166": "CC", "170": "CO", "174": "KM",
+    "175": "YT", "178": "CG", "180": "CD", "184": "CK", "188": "CR", "191": "HR", "192": "CU",
+    "196": "CY", "203": "CZ", "204": "BJ", "208": "DK", "212": "DM", "214": "DO", "218": "EC",
+    "222": "SV", "226": "GQ", "231": "ET", "232": "ER", "233": "EE", "234": "FO", "238": "FK",
+    "239": "GS", "242": "FJ", "246": "FI", "248": "AX", "250": "FR", "254": "GF", "258": "PF",
+    "260": "TF", "262": "DJ", "266": "GA", "268": "GE", "270": "GM", "275": "PS", "276": "DE",
+    "288": "GH", "292": "GI", "296": "KI", "300": "GR", "304": "GL", "308": "GD", "312": "GP",
+    "316": "GU", "320": "GT", "324": "GN", "328": "GY", "332": "HT", "334": "HM", "336": "VA",
+    "340": "HN", "344": "HK", "348": "HU", "352": "IS", "356": "IN", "360": "ID", "364": "IR",
+    "368": "IQ", "372": "IE", "376": "IL", "380": "IT", "384": "CI", "388": "JM", "392": "JP",
+    "398": "KZ", "400": "JO", "404": "KE", "408": "KP", "410": "KR", "414": "KW", "417": "KG",
+    "418": "LA", "422": "LB", "426": "LS", "428": "LV", "430": "LR", "434": "LY", "438": "LI",
+    "440": "LT", "442": "LU", "446": "MO", "450": "MG", "454": "MW", "458": "MY", "462": "MV",
+    "466": "ML", "470": "MT", "474": "MQ", "478": "MR", "480": "MU", "484": "MX", "492": "MC",
+    "496": "MN", "498": "MD", "499": "ME", "500": "MS", "504": "MA", "508": "MZ", "512": "OM",
+    "516": "NA", "520": "NR", "524": "NP", "528": "NL", "531": "CW", "533": "AW", "534": "SX",
+    "535": "BQ", "540": "NC", "548": "VU", "554": "NZ", "558": "NI", "562": "NE", "566": "NG",
+    "570": "NU", "574": "NF", "578": "NO", "580": "MP", "581": "UM", "583": "FM", "584": "MH",
+    "585": "PW", "586": "PK", "591": "PA", "598": "PG", "600": "PY", "604": "PE", "608": "PH",
+    "612": "PN", "616": "PL", "620": "PT", "624": "GW", "626": "TL", "630": "PR", "634": "QA",
+    "638": "RE", "642": "RO", "643": "RU", "646": "RW", "652": "BL", "654": "SH", "659": "KN",
+    "660": "AI", "662": "LC", "663": "MF", "666": "PM", "670": "VC", "674": "SM", "678": "ST",
+    "682": "SA", "686": "SN", "688": "RS", "690": "SC", "694": "SL", "702": "SG", "703": "SK",
+    "704": "VN", "705": "SI", "706": "SO", "710": "ZA", "716": "ZW", "724": "ES", "728": "SS",
+    "729": "SD", "732": "EH", "740": "SR", "744": "SJ", "748": "SZ", "752": "SE", "756": "CH",
+    "760": "SY", "762": "TJ", "764": "TH", "768": "TG", "772": "TK", "776": "TO", "780": "TT",
+    "784": "AE", "788": "TN", "792": "TR", "795": "TM", "796": "TC", "798": "TV", "800": "UG",
+    "804": "UA", "807": "MK", "818": "EG", "826": "GB", "831": "GG", "832": "JE", "833": "IM",
+    "834": "TZ", "840": "US", "850": "VI", "854": "BF", "858": "UY", "860": "UZ", "862": "VE",
+    "876": "WF", "882": "WS", "887": "YE", "894": "ZM"
+  };
+
   const CC_RE = /^[A-Z]{2}$/;
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   const MAX_LABEL = 64;
@@ -582,6 +630,35 @@ window.HP = (function () {
     return out;
   }
 
+  // Code a deux lettres d'un pays du fond de carte (null si inconnu).
+  function featureCode(f) {
+    if (f && f.id !== undefined && f.id !== null) {
+      const code = ISO_NUM[String(f.id).padStart(3, "0")];
+      if (code) return code;
+    }
+    // Le Kosovo n'a pas de code numerique dans world-atlas.
+    if (f && f.properties && f.properties.name === "Kosovo") return "XK";
+    return null;
+  }
+
+  // Classement des pays : code -> { code, country, count, rank, t }.
+  // t vaut 1 pour le pays en tete et tend vers 0 pour le dernier ;
+  // deux pays a egalite ont le meme rang et donc la meme couleur.
+  function rankCountries(list) {
+    const known = list.filter(c => CC_RE.test(c.code)).sort((a, b) => b.count - a.count);
+    const n = known.length;
+    const out = {};
+    let rank = 0;
+    known.forEach(function (c, i) {
+      if (i === 0 || c.count !== known[i - 1].count) rank = i + 1;
+      out[c.code] = {
+        code: c.code, country: countryName(c.code), count: c.count, rank: rank,
+        t: n > 1 ? 1 - (rank - 1) / (n - 1) : 1
+      };
+    });
+    return out;
+  }
+
   function formatDate(iso, withYear) {
     const p = iso.split("-");
     return withYear ? p[2] + "/" + p[1] + "/" + p[0] : p[2] + "/" + p[1];
@@ -627,7 +704,8 @@ window.HP = (function () {
 
   return {
     CENTROIDS: CENTROIDS, countryName: countryName, parsePayload: parsePayload,
-    pointsFromCountries: pointsFromCountries, formatDate: formatDate,
+    pointsFromCountries: pointsFromCountries, featureCode: featureCode,
+    rankCountries: rankCountries, formatDate: formatDate,
     renderStatList: renderStatList, fillTooltip: fillTooltip, mk: mk
   };
 })();
@@ -651,7 +729,14 @@ window.HP = (function () {
 
   let width, height, projection, path, g, markerLayer;
   let worldData = null;
-  let latestPoints = [];
+  let latestPoints = [];   // pays classes mais absents du fond de carte (petits territoires)
+  let rankMap = {};        // code pays -> infos de classement (voir HP.rankCountries)
+  let worldCodes = new Set();
+  const rootStyle = getComputedStyle(document.documentElement);
+  const heat = d3.interpolateRgb(
+    rootStyle.getPropertyValue("--heat-low").trim() || "#6b3b1c",
+    rootStyle.getPropertyValue("--heat-high").trim() || "#ff9a3d"
+  );
   let latestTotal = 0;
   let selectedKey = null;
 
@@ -743,37 +828,71 @@ window.HP = (function () {
     if (worldData) {
       g.select(".countries-layer").selectAll(".country")
         .data(worldData.features)
-        .join("path")
-        .attr("class", "country")
-        .attr("d", path);
+        .join(function (enter) {
+          return enter.append("path")
+            .on("mouseenter", onCountryEnter)
+            .on("mousemove", onCountryMove)
+            .on("mouseleave", onCountryLeave)
+            .on("click", onCountryClick);
+        })
+        .attr("class", countryClass)
+        .attr("d", path)
+        .style("fill", countryFill);
     }
   }
 
   initBase();
 
-  function radiusScale(maxCount) {
-    return d3.scaleSqrt().domain([1, Math.max(maxCount, 1)]).range([4, 26]);
+  function countryClass(d) {
+    const info = rankMap[d.code];
+    return "country" + (info ? " has-data" : "") + (info && info.code === selectedKey ? " is-selected" : "");
   }
 
-  function pointKey(d) { return d.country + "|" + d.lat + "|" + d.lon; }
+  // Plus le pays est haut dans le classement, plus l'orange est vif.
+  function countryFill(d) {
+    const info = rankMap[d.code];
+    return info ? heat(info.t) : null;
+  }
+
+  function onCountryEnter(event, d) {
+    const info = rankMap[d.code];
+    if (!info) return;
+    tooltip.style("opacity", 1);
+    HP.fillTooltip(tooltip.node(), info.country, info.count);
+  }
+
+  function onCountryMove(event) {
+    tooltip.style("left", (event.pageX + 14) + "px").style("top", (event.pageY - 10) + "px");
+  }
+
+  function onCountryLeave() { tooltip.style("opacity", 0); }
+
+  function onCountryClick(event, d) {
+    const info = rankMap[d.code];
+    if (!info) return; // pays sans donnees : le clic ferme la fiche (svg)
+    event.stopPropagation();
+    showDetail(info);
+  }
+
+  function pointKey(d) { return d.code; }
 
   // Un point au dos du globe ne doit pas s'afficher : la projection
   // orthographique ne le fait pas disparaitre toute seule pour des
-  // marqueurs places manuellement (contrairement aux contours de pays,
-  // geres automatiquement par le clipAngle du path).
+  // marqueurs places manuellement.
   function isFrontFacing(lon, lat) {
     const r = projection.rotate();
     const center = [-r[0], -r[1]];
     return d3.geoDistance([lon, lat], center) < (Math.PI / 2 - 0.02);
   }
 
-  function showDetail(d, rank) {
-    selectedKey = pointKey(d);
-    const pct = latestTotal ? ((d.count / latestTotal) * 100).toFixed(1) : "0";
-    detailCountry.textContent = d.country;
-    detailCount.textContent = d.count.toLocaleString("fr-FR");
-    detailSub.textContent = `${rank}ᵉ pays le plus actif — ${pct}% du total`;
+  function showDetail(info) {
+    selectedKey = info.code;
+    const pct = latestTotal ? ((info.count / latestTotal) * 100).toFixed(1) : "0";
+    detailCountry.textContent = info.country;
+    detailCount.textContent = info.count.toLocaleString("fr-FR");
+    detailSub.textContent = `${info.rank === 1 ? "1er" : info.rank + "ᵉ"} pays le plus actif — ${pct}% du total`;
     detailCard.classList.add("visible");
+    updateBase();
     markerLayer.selectAll(".marker-dot")
       .classed("is-selected", dd => pointKey(dd) === selectedKey);
   }
@@ -781,6 +900,7 @@ window.HP = (function () {
   function hideDetail() {
     selectedKey = null;
     detailCard.classList.remove("visible");
+    updateBase();
     if (markerLayer) markerLayer.selectAll(".marker-dot").classed("is-selected", false);
     lastInteraction = Date.now(); // redemarre le decompte avant reprise de la rotation
   }
@@ -788,20 +908,17 @@ window.HP = (function () {
   detailClose.addEventListener("click", hideDetail);
   svg.on("click", hideDetail);
 
+  // Points uniquement pour les pays absents du fond de carte (Singapour,
+  // petites iles...) : sans eux, leurs tentatives ne seraient pas visibles.
   function renderMarkers(points) {
     if (!markerLayer) return;
-    const maxCount = d3.max(points, d => d.count) || 1;
-    const rScale = radiusScale(maxCount);
-    const sorted = [...points].sort((a, b) => b.count - a.count);
-
     const groups = markerLayer.selectAll("g.marker")
       .data(points, pointKey);
 
     groups.exit().remove();
 
     const entered = groups.enter().append("g").attr("class", "marker");
-    entered.append("circle").attr("class", "marker-ring");
-    entered.append("circle").attr("class", "marker-dot");
+    entered.append("circle").attr("class", "marker-dot").attr("r", 3.5);
 
     const merged = entered.merge(groups)
       .style("display", d => isFrontFacing(d.lon, d.lat) ? null : "none")
@@ -811,26 +928,18 @@ window.HP = (function () {
       });
 
     merged.select(".marker-dot")
-      .attr("r", d => rScale(d.count) * 0.28)
       .classed("is-selected", d => pointKey(d) === selectedKey)
+      .style("fill", d => heat(rankMap[d.code] ? rankMap[d.code].t : 0))
       .on("mouseenter", function (event, d) {
         tooltip.style("opacity", 1);
         HP.fillTooltip(tooltip.node(), d.country, d.count);
       })
-      .on("mousemove", function (event) {
-        tooltip.style("left", (event.pageX + 14) + "px").style("top", (event.pageY - 10) + "px");
-      })
-      .on("mouseleave", function () { tooltip.style("opacity", 0); })
+      .on("mousemove", onCountryMove)
+      .on("mouseleave", onCountryLeave)
       .on("click", function (event, d) {
         event.stopPropagation();
-        const rank = sorted.findIndex(s => pointKey(s) === pointKey(d)) + 1;
-        showDetail(d, rank);
+        if (rankMap[d.code]) showDetail(rankMap[d.code]);
       });
-
-    merged.select(".marker-ring")
-      .style("--r0", d => (rScale(d.count) * 0.28) + "px")
-      .style("--r1", d => (rScale(d.count) * 1.9) + "px")
-      .attr("r", d => rScale(d.count) * 0.28);
   }
 
   // ---- Rotation : glisser a la souris/au doigt + rotation lente au repos ----
@@ -979,8 +1088,8 @@ window.HP = (function () {
 
   function applyPayload(json) {
     const data = HP.parsePayload(json);
-    const points = HP.pointsFromCountries(data.countries);
-    latestPoints = points;
+    rankMap = HP.rankCountries(data.countries);
+    latestPoints = HP.pointsFromCountries(data.countries).filter(p => !worldCodes.has(p.code));
     latestTotal = data.total;
 
     counterValue.textContent = latestTotal.toLocaleString("fr-FR");
@@ -1010,9 +1119,11 @@ window.HP = (function () {
     // rafraichissement automatique - la selection en cours ne doit pas
     // sauter a chaque fois.
 
-    if (points.length) {
+    updateBase();
+    renderMarkers(latestPoints);
+
+    if (Object.keys(rankMap).length) {
       hideEmptyState();
-      renderMarkers(points);
     } else {
       showEmptyState("Aucune tentative enregistrée pour le moment. La carte se mettra à jour automatiquement dès qu'une attaque sera captée.");
     }
@@ -1035,6 +1146,8 @@ window.HP = (function () {
   d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json")
     .then(function (topo) {
       worldData = topojson.feature(topo, topo.objects.countries);
+      worldData.features.forEach(function (f) { f.code = HP.featureCode(f); });
+      worldCodes = new Set(worldData.features.map(f => f.code).filter(Boolean));
       updateBase();
       loadData();
     })
